@@ -7,13 +7,21 @@ def finite(a,ndim=None):
  a=np.asarray(a,dtype=float)
  if not np.isfinite(a).all() or not a.size or (ndim is not None and a.ndim!=ndim): raise ValueError('Invalid shape, empty or nonfinite input')
  return a
-def process(durations,events):
- durations=finite(durations,1);events=np.asarray(events)
- if events.shape!=durations.shape or np.any(durations<0) or not np.isin(events,[0,1]).all():raise ValueError('Invalid duration/event inputs')
- times=np.unique(durations[events==1]);survival=1.;curve=[1.];axis=[0.]
- for time in times:
-  risk=np.sum(durations>=time);deaths=np.sum((durations==time)&(events==1));survival*=1-deaths/risk;axis.append(float(time));curve.append(float(survival))
- return np.array(axis),np.array(curve)
+def process(durations, events):
+ durations = finite(durations, 1)
+ events = np.asarray(events)
+ if events.shape != durations.shape or np.any(durations < 0) or not np.isin(events, [0, 1]).all():
+  raise ValueError('Invalid duration/event inputs')
+
+ # Group all observations by time so a tied censor still contributes to the
+ # risk set for an event at that time. Only emit points at event times.
+ times, groups, counts = np.unique(durations, return_inverse=True, return_counts=True)
+ deaths = np.bincount(groups[events == 1], minlength=times.size)
+ at_risk = np.cumsum(counts[::-1])[::-1]
+ event_times = deaths > 0
+ survival = np.cumprod(1 - deaths[event_times] / at_risk[event_times])
+ return np.concatenate(([0.], times[event_times])), np.concatenate(([1.], survival))
+
 def demo():
  tx,sy=process([1,2,3,4],[1,1,0,1]);assert np.allclose(sy,[1,.75,.5,0])
  rng=np.random.default_rng(42);actual=rng.exponential(25,500);censor=rng.uniform(10,50,500);durations=np.minimum(actual,censor);events=(actual<=censor).astype(int);x,y=process(durations,events)
